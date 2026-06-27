@@ -20,12 +20,15 @@ last_signal = {}
 # =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+    try:
+        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+    except:
+        pass
 
 # =====================
-# INIT MT5
+# MT5 INIT
 # =====================
-def init_mt5():
+def init():
     if not mt5.initialize():
         print("MT5 init failed")
         quit()
@@ -36,6 +39,10 @@ def init_mt5():
 def get_data(symbol):
     rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME, 0, BARS)
     df = pd.DataFrame(rates)
+
+    if df.empty:
+        return df
+
     df["time"] = pd.to_datetime(df["time"], unit="s")
     return df
 
@@ -73,8 +80,8 @@ def analyze(df):
 # LOOP
 # =====================
 def run():
-    init_mt5()
-    print("🚀 MT5 PRO SIGNAL BOT AVVIATO")
+    init()
+    print("🚀 MT5 PRO CLEAN BOT AVVIATO")
 
     while True:
         try:
@@ -82,7 +89,7 @@ def run():
 
                 df = get_data(sym)
 
-                if len(df) < 100:
+                if df.empty or len(df) < 100:
                     continue
 
                 result = analyze(df)
@@ -92,7 +99,7 @@ def run():
 
                     if last_signal.get(sym) != signal:
                         msg = f"""
-📊 {sym} (MT5)
+📊 {sym} (MT5 REAL)
 
 SIGNAL: {signal}
 ENTRY: {round(entry,2)}
