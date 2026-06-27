@@ -1,5 +1,3 @@
-pandas
-numpy
 yfinance
+pandas
 requests
-ta
