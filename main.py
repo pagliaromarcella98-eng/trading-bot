@@ -1,90 +1,86 @@
-import yfinance as yf
+import MetaTrader5 as mt5
 import pandas as pd
 import requests
 import time
 
-# =========================
+# =====================
 # CONFIG
-# =========================
-SYMBOLS = ["XAUUSD=X", "BTC-USD"]
-INTERVAL = "5m"
-PERIOD = "5d"
+# =====================
+SYMBOLS = ["XAUUSD", "BTCUSD"]
+TIMEFRAME = mt5.TIMEFRAME_M5
+BARS = 200
 
 TELEGRAM_TOKEN = "7701307731:AAHxfIEeJOZhy3M86WEcgo5jSpOjc7jmpAs"
 TELEGRAM_CHAT_ID = "404088203"
 
 last_signal = {}
 
-# =========================
+# =====================
 # TELEGRAM
-# =========================
+# =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    try:
-        requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
-    except:
-        pass
+    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
 
-# =========================
+# =====================
+# INIT MT5
+# =====================
+def init_mt5():
+    if not mt5.initialize():
+        print("MT5 init failed")
+        quit()
+
+# =====================
+# DATA
+# =====================
+def get_data(symbol):
+    rates = mt5.copy_rates_from_pos(symbol, TIMEFRAME, 0, BARS)
+    df = pd.DataFrame(rates)
+    df["time"] = pd.to_datetime(df["time"], unit="s")
+    return df
+
+# =====================
 # INDICATORS
-# =========================
+# =====================
 def ema(series, n):
     return series.ewm(span=n, adjust=False).mean()
 
 def atr(df, n=14):
-    high_low = df["High"] - df["Low"]
-    return high_low.rolling(n).mean()
+    return (df["high"] - df["low"]).rolling(n).mean()
 
-# =========================
+# =====================
 # STRATEGY
-# =========================
+# =====================
 def analyze(df):
-    df = df.dropna()
+    price = df["close"].iloc[-1]
 
-    price = df["Close"].iloc[-1]
-
-    ema50 = ema(df["Close"], 50)
-    ema200 = ema(df["Close"], 200)
+    ema50 = ema(df["close"], 50)
+    ema200 = ema(df["close"], 200)
     a = atr(df).iloc[-1]
 
-    trend_up = ema50.iloc[-1] > ema200.iloc[-1]
-    trend_down = ema50.iloc[-1] < ema200.iloc[-1]
-
-    # filtro volatilità (evita mercato morto)
-    if a is None or a == 0:
+    if pd.isna(a):
         return None
 
-    # BUY
-    if trend_up:
-        sl = price - (a * 1.5)
-        tp = price + (a * 3)
+    if ema50.iloc[-1] > ema200.iloc[-1]:
+        return ("BUY", price, price - a*1.5, price + a*3)
 
-        return ("BUY", price, sl, tp)
-
-    # SELL
-    if trend_down:
-        sl = price + (a * 1.5)
-        tp = price - (a * 3)
-
-        return ("SELL", price, sl, tp)
+    if ema50.iloc[-1] < ema200.iloc[-1]:
+        return ("SELL", price, price + a*1.5, price - a*3)
 
     return None
 
-# =========================
+# =====================
 # LOOP
-# =========================
+# =====================
 def run():
-    print("🚀 PRO TRADING BOT AVVIATO")
+    init_mt5()
+    print("🚀 MT5 PRO SIGNAL BOT AVVIATO")
 
     while True:
         try:
             for sym in SYMBOLS:
 
-                df = yf.download(sym, interval=INTERVAL, period=PERIOD, progress=False)
-
-                # fix colonne multi-index
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
+                df = get_data(sym)
 
                 if len(df) < 100:
                     continue
@@ -96,18 +92,15 @@ def run():
 
                     if last_signal.get(sym) != signal:
                         msg = f"""
-📊 {sym}
+📊 {sym} (MT5)
 
 SIGNAL: {signal}
-
-ENTRY: {round(entry, 2)}
-SL: {round(sl, 2)}
-TP: {round(tp, 2)}
+ENTRY: {round(entry,2)}
+SL: {round(sl,2)}
+TP: {round(tp,2)}
 """
-
                         print(msg)
                         send(msg)
-
                         last_signal[sym] = signal
 
             time.sleep(60)
